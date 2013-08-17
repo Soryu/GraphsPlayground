@@ -25,7 +25,7 @@
 - (void)loadView
 {
   self.view = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 480)];
-  self.view.backgroundColor = [UIColor colorFromHexString:@"#F4F4F4"];
+  self.view.backgroundColor = [UIColor colorFromHexString:@"#F2E4DA"];
   
   CGFloat width  = 320;
   CGFloat height = 200;
@@ -89,6 +89,7 @@
   [super viewDidLoad];
   
   self.title = @"Animated Graph";
+  self.view.tintColor = [UIColor colorFromHexString:@"#411D00"];
 }
 
 - (void)viewDidAppear:(BOOL)animated
@@ -104,6 +105,7 @@
     @75,
     @50,
     @32,
+    @20,
     @12,
   ];
 }
@@ -131,10 +133,12 @@
 - (NSArray *)colors
 {
   return @[
-    [UIColor colorFromHexString:@"#65933D"],
-    [UIColor colorFromHexString:@"#911845"],
-    [UIColor colorFromHexString:@"#376292"],
-    [UIColor colorFromHexString:@"#A25112"],
+    [UIColor colorFromHexString:@"#FF6F00"],
+    [UIColor colorFromHexString:@"#FFAE00"],
+    [UIColor colorFromHexString:@"#F10026"],
+    [UIColor colorFromHexString:@"#009D91"],
+    [UIColor colorFromHexString:@"#3BDA00"],
+    [UIColor colorFromHexString:@"#133AAC"],
   ];
 }
 
