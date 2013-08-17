@@ -10,7 +10,7 @@
 
 @interface SERCircularGraphView : UIView
 
-@property (nonatomic, copy, readonly) NSArray *data;
+@property (nonatomic, copy, readonly) NSArray *values;
 @property (nonatomic, copy, readonly) NSNumber *minimumValue;
 @property (nonatomic, copy, readonly) NSNumber *maximumValue;
 
@@ -23,6 +23,5 @@
 
 - (void)setData:(NSArray *)data minimumValue:(NSNumber *)minimumValue maximumValue:(NSNumber *)maximumValue;
 - (void)animateIn;
-- (void)animateOut;
 
 @end

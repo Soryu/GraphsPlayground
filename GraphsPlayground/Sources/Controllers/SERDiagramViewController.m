@@ -66,22 +66,13 @@
   
   self.button1.selected = YES;
 
-  UIButton *animateInButton = [UIButton buttonWithType:UIButtonTypeRoundedRect];
-  [animateInButton setTitle:@"animate in" forState:UIControlStateNormal];
-  [animateInButton addTarget:self action:@selector(animateInPressed:) forControlEvents:UIControlEventTouchUpInside];
-
-  UIButton *animateOutButton = [UIButton buttonWithType:UIButtonTypeRoundedRect];
-  [animateOutButton setTitle:@"animate out" forState:UIControlStateNormal];
-  [animateOutButton addTarget:self action:@selector(animateOutPressed:) forControlEvents:UIControlEventTouchUpInside];
+  UIButton *clearButton = [UIButton buttonWithType:UIButtonTypeRoundedRect];
+  [clearButton setTitle:@"clear" forState:UIControlStateNormal];
+  [clearButton addTarget:self action:@selector(clearButtonPressed:) forControlEvents:UIControlEventTouchUpInside];
+  clearButton.frame = CGRectMake(0, 420, 320, 44);
+  clearButton.autoresizingMask = UIViewAutoresizingFlexibleTopMargin;
   
-  animateInButton.frame  = CGRectMake( 30, 420, 120, 44);
-  animateOutButton.frame = CGRectMake(170, 420, 120, 44);
-
-  animateInButton.autoresizingMask  = UIViewAutoresizingFlexibleTopMargin;
-  animateOutButton.autoresizingMask = UIViewAutoresizingFlexibleTopMargin;
-  
-  [self.view addSubview:animateInButton];
-  [self.view addSubview:animateOutButton];
+  [self.view addSubview:clearButton];
 }
 
 - (void)viewDidLoad
@@ -165,14 +156,10 @@
   sender.selected = YES;
 }
 
-- (void)animateInPressed:(UIButton *)sender
+- (void)clearButtonPressed:(UIButton *)sender
 {
-  [self.circularGraphView animateIn];
-}
-
-- (void)animateOutPressed:(UIButton *)sender
-{
-  [self.circularGraphView animateOut];
+  [self.circularGraphView setData:nil minimumValue:0 maximumValue:0];
+  [@[self.button1, self.button2, self.button3] setValue:@NO forKey:@"selected"];
 }
 
 

@@ -8,25 +8,34 @@
 
 #import "SERCircularGraphView.h"
 
-const double kOvershootFactor   = 1.1;
+const double kOvershootFactor         = 1.1;
 const double kInOutAnimationDuration  = 1.0;
 const double kChangeAnimationDuration = 0.25;
 
+
 @interface SERCircularGraphView ()
 
-@property (nonatomic, strong) CAShapeLayer *legendLayer;
-@property (nonatomic, strong) NSMutableArray *graphLayers;
-@property (nonatomic, strong) UIColor *defaultColor;
+/** container for legend layers **/
+@property (nonatomic, strong) CALayer *legendLayer;
 
-@property (nonatomic, copy, readwrite) NSArray *data;
+/** container for data layers **/
+@property (nonatomic, strong) CALayer *graphLayer;
+@property (nonatomic, strong) NSMutableArray *graphDataLayers;
+
+/** normalized data **/
+@property (nonatomic, strong) NSArray *dataPoints;
+
+/** raw data **/
+@property (nonatomic, copy, readwrite) NSArray *values;
 @property (nonatomic, copy, readwrite) NSNumber *minimumValue;
 @property (nonatomic, copy, readwrite) NSNumber *maximumValue;
 
-@property (nonatomic) BOOL isShowing;
+@property (nonatomic, strong) UIColor *defaultColor;
 
 @end
 
-// FIXME animating between paths is broken, different number of control points. Easy solution: Always use full circles and set & animate `strokeEnd`
+
+// TODO make it work for negative values as well, normalize between -1.0 .. 1.0
 // TODO Legend, also animatable
 
 @implementation SERCircularGraphView
@@ -39,18 +48,25 @@ const double kChangeAnimationDuration = 0.25;
     self.strokeWidth      = 4.0;
     self.lineDistance     = 3.0;
     self.startAngleOffset = -M_PI;
-    self.padding          = self.strokeWidth / 2.0;
+    self.padding          = 0.0;
     self.defaultColor     = [UIColor blackColor];
     self.overshoot        = YES;
 
-    self.graphLayers = [NSMutableArray new];
+    self.graphLayer  = [CALayer new];
+    self.legendLayer = [CALayer new];
+    [self.layer addSublayer:self.graphLayer];
+    [self.layer addSublayer:self.legendLayer];
+
+    
+    self.graphDataLayers = [NSMutableArray new];
+    self.dataPoints      = [NSMutableArray new];
     
     self.backgroundColor = [UIColor clearColor];
   }
   return self;
 }
 
-// deferred data mangling until it's time to display so we can set alll attributes in any order
+// deferred data mangling until it's time to display so we can set all attributes in any order
 - (void)layoutSubviews
 {
   [super layoutSubviews];
@@ -61,50 +77,15 @@ const double kChangeAnimationDuration = 0.25;
 
 - (void)build
 {
-  DLog(@".");
-  
-  double minimumValue = [self.minimumValue doubleValue];
-  double maximumValue = [self.maximumValue doubleValue];
-  for(NSNumber *dataPoint in self.data)
-  {
-    BOOL isResponding = [dataPoint respondsToSelector:@selector(doubleValue)];
-    NSAssert(isResponding, @"NSNumber instances expected in dataset");
-    
-    if (!isResponding)
-    {
-      // fail gracefully
-      continue;
-    }
-    
-    double value = [dataPoint doubleValue];
-    
-    // TODO not sure about these auto adjustments of min and max, might be nice to have one line go in the opposite direction?
-    NSAssert(minimumValue <= value, @"given minimumValue not minimum");
-    NSAssert(maximumValue >= value, @"given maximumValue not maximum");
-    
-    if (value < minimumValue)
-      minimumValue = value;
-    if (value > maximumValue)
-      maximumValue = value;
-  }
-  
   CGFloat screenScale = [UIScreen mainScreen].scale;
-  double maximumRadius = fmin(self.frame.size.width, self.frame.size.height) / 2 - self.padding;
-  
-  double range = maximumValue - minimumValue;
-  CGPoint center = CGPointMake(CGRectGetMidX(self.bounds), CGRectGetMidY(self.bounds));
-  
-  for(NSUInteger i = 0; i < [self.data count]; ++i)
-  {
-    double value = [self.data[i] doubleValue];
-    
-    if (self.overshoot)
-      value *= kOvershootFactor;
+  double maximumRadius = fmin(self.frame.size.width, self.frame.size.height) / 2 - self.padding - self.strokeWidth / 2.0;
 
-    double relativeValue = value = (value - minimumValue) / range;
-    
+  NSArray *oldDataPoints = [self.dataPoints copy];
+  NSMutableArray *dataPoints = [NSMutableArray new];
+
+  for(NSUInteger i = 0; i < [self.values count]; ++i)
+  {
     CGFloat radius = maximumRadius - self.strokeWidth / 2 - i * (self.strokeWidth + self.lineDistance);
-    
     BOOL sizeOK = radius >= self.strokeWidth / 2;
     NSAssert(sizeOK, @"graph too small for number of data points and strokeWidth/lineDistance/... configuration");
     
@@ -114,123 +95,157 @@ const double kChangeAnimationDuration = 0.25;
       break;
     }
     
+    // round to pixel boundaries
     radius = round(radius * screenScale) / screenScale;
-    
-    // always create new, existing ones are not mutable
-    UIBezierPath *bezierPath = [UIBezierPath
-      bezierPathWithArcCenter:center
-      radius:radius
-      startAngle:self.startAngleOffset
-      endAngle:2 * M_PI * relativeValue + self.startAngleOffset
-      clockwise:YES];
-    
-    CAShapeLayer *layer = nil;
-    if ([self.graphLayers count] > i)
-    {
-      layer = self.graphLayers[i];
-    }
-    else
-    {
-      layer = [CAShapeLayer new];
-      [self.graphLayers addObject:layer];
-    }
-    
-    UIColor *color = self.defaultColor;
-    if ([self.colors count] > i)
-      color = self.colors[i];
 
-    layer.fillColor   = nil;
-    layer.strokeColor = color.CGColor;
-    layer.lineWidth   = self.strokeWidth;
+    double dataPoint = [self dataPointForValueAtIndex:i];
+    [dataPoints addObject:@(dataPoint)];
+
+    CAShapeLayer *layer = [self layerForIndex:i withRadius:radius];
+    layer.strokeEnd = dataPoint;
     
-    if (!layer.path)
+    if ([oldDataPoints count] > i)
     {
-      layer.path = bezierPath.CGPath;
+      [self animateLayer:layer fromValue:oldDataPoints[i] toValue:@(dataPoint)];
     }
-    else if (self.isShowing)
-    {
-      CAAnimation *animation = nil;
-      if (layer.opacity == 0.0)
-      {
-        CABasicAnimation *opacityAnimation = [CABasicAnimation animationWithKeyPath:@"opacity"];
-        opacityAnimation.fromValue = @0.0;
-        opacityAnimation.toValue   = @1.0;
-        opacityAnimation.duration  = kChangeAnimationDuration;
-        
-        animation = opacityAnimation;
-      }
-      else
-      {
-        CABasicAnimation *pathAnimation = [CABasicAnimation animationWithKeyPath:@"path"];
-        pathAnimation.fromValue = (id)layer.path;
-        pathAnimation.toValue   = (id)bezierPath.CGPath;
-        pathAnimation.duration  = kChangeAnimationDuration;
-        pathAnimation.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
-        
-        animation = pathAnimation;
-      }
-      
-      layer.path = bezierPath.CGPath;
-      [layer addAnimation:animation forKey:@"path"];
-    }
-
-    layer.opacity = self.isShowing ? 1.0 : 0.0;
-
-    if (!layer.superlayer)
-      [self.layer addSublayer:layer];
   }
   
-  if ([self.graphLayers count] > [self.data count])
+  self.dataPoints = dataPoints;
+  
+  if ([self.graphDataLayers count] > [self.values count])
   {
-    // NOTE fading out unused layers, but not removing them. overhead should be neglegible
-    
-    for (NSUInteger i = [self.data count]; i < [self.graphLayers count]; ++i)
+    // fade out unused layers
+    for (NSUInteger i = [self.values count]; i < [self.graphDataLayers count]; ++i)
     {
-      CALayer *layer = self.graphLayers[i];
+      CAShapeLayer *layer = self.graphDataLayers[i];
+      CGFloat fromValue = layer.strokeEnd;
+      CGFloat toValue   = 0.0;
+
+      layer.strokeEnd = toValue;
+
+      CABasicAnimation *animation = [CABasicAnimation animationWithKeyPath:@"strokeEnd"];
+      animation.fromValue = @(fromValue);
+      animation.toValue   = @(toValue);
+      animation.duration  = kChangeAnimationDuration;
       
-      CABasicAnimation *opacityAnimation = [CABasicAnimation animationWithKeyPath:@"opacity"];
-      opacityAnimation.fromValue = @(layer.opacity);
-      opacityAnimation.toValue   = @0.0;
-      opacityAnimation.duration  = kChangeAnimationDuration;
-      
-      layer.opacity = 0.0;
-      [layer addAnimation:opacityAnimation forKey:@"opacity"];
+      [layer addAnimation:animation forKey:@"unused"];
     }
   }
+}
+
+// normalizes between 0.0 and 1.0
+- (double)dataPointForValueAtIndex:(NSUInteger)index
+{
+  double min = [self.minimumValue doubleValue];
+  double max = [self.maximumValue doubleValue];
+
+  return ([self.values[index] doubleValue] - min) / (max - min);
+}
+
+- (void)checkValuesWithMinimum:(double *)minimumValue maximum:(double *)maximumValue
+{
+  for(NSNumber *valueObject in self.values)
+  {
+    BOOL isResponding = [valueObject respondsToSelector:@selector(doubleValue)];
+    NSAssert(isResponding, @"NSNumber instances expected in dataset");
+    
+    if (!isResponding)
+    {
+      // fail gracefully
+      continue;
+    }
+    
+    double value = [valueObject doubleValue];
+    
+    // TODO not sure about these auto adjustments of min and max, might be nice to have one line go in the opposite direction?
+    NSAssert(*minimumValue <= value, @"given minimumValue not minimum");
+    NSAssert(*maximumValue >= value, @"given maximumValue not maximum");
+    
+    if (value < *minimumValue)
+      *minimumValue = value;
+    if (value > *maximumValue)
+      *maximumValue = value;
+  }
+}
+
+- (void)animateLayer:(CAShapeLayer *)layer fromValue:(NSNumber *)fromValue toValue:(NSNumber *)toValue
+{
+  CABasicAnimation *animation = [CABasicAnimation animationWithKeyPath:@"strokeEnd"];
+  animation.fromValue      = fromValue;
+  animation.toValue        = toValue;
+  animation.duration       = kChangeAnimationDuration;
+  animation.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+
+  [layer addAnimation:animation forKey:@"changeAnimation"];
+}
+
+// TODO radius can change when view size changes, layers/paths need to be invalidated when that happens. This could be while rotating the device, so this should be fast.
+- (CAShapeLayer *)layerForIndex:(NSUInteger)index withRadius:(CGFloat)radius
+{
+  // create layers and paths if needed or reuse existing ones
+  if ([self.graphDataLayers count] > index)
+    return self.graphDataLayers[index];
+
+  CAShapeLayer *layer = [CAShapeLayer new];
+  CGPoint center = CGPointMake(CGRectGetMidX(self.bounds), CGRectGetMidY(self.bounds));
+  UIBezierPath *bezierPath = [UIBezierPath bezierPathWithArcCenter:center radius:radius startAngle:self.startAngleOffset endAngle:2 * M_PI + self.startAngleOffset clockwise:YES];
+  layer.path = bezierPath.CGPath;
+  
+  // TODO configuration changes should be applicable live, override setters and change layer properties
+  UIColor *color = self.defaultColor;
+  if ([self.colors count] > index)
+    color = self.colors[index];
+  
+  layer.fillColor   = nil;
+  layer.strokeColor = color.CGColor;
+  layer.lineWidth   = self.strokeWidth;
+  
+  [self.graphLayer addSublayer:layer];
+  [self.graphDataLayers addObject:layer];
+
+  return layer;
 }
 
 - (void)setData:(NSArray *)data minimumValue:(NSNumber *)minimumValue maximumValue:(NSNumber *)maximumValue;
 {
-  self.data = data;
-  self.minimumValue = minimumValue;
-  self.maximumValue = maximumValue;
+  self.values = data;
+  
+  double min = [minimumValue doubleValue];
+  double max = [maximumValue doubleValue];
+
+  [self checkValuesWithMinimum:&min maximum:&max];
+
+  self.minimumValue = @(min);
+  self.maximumValue = @(max);
   
   [self setNeedsLayout];
-  
-  // TODO not sure about animating automatically
-  if (!self.isShowing)
-    [self animateIn];
 }
 
 - (void)animateIn
 {
-  self.isShowing = YES;
-  
   [CATransaction begin];
-  for (CAShapeLayer *layer in self.graphLayers)
+  for (NSUInteger i = 0; i < [self.dataPoints count]; ++i)
   {
-    CGFloat endValue = 1.0;
-    if (self.overshoot)
-      endValue = 1.0 / kOvershootFactor;
+    double dataPoint = [self.dataPoints[i] doubleValue];
+    
+    NSAssert([self.graphDataLayers count] > i, @"no layer for data point index");
+    CAShapeLayer *layer = self.graphDataLayers[i];
+    
+    CGFloat fromValue = 0.0;
+    CGFloat toValue   = dataPoint;
 
-    layer.strokeEnd = endValue;
+    CGFloat maxValue  = toValue;
+    if (self.overshoot)
+      maxValue = fmin(1.0, toValue * kOvershootFactor);
+    
+    layer.strokeEnd = toValue;
     
     CAAnimation *animation = nil;
     if (self.overshoot)
     {
       CAKeyframeAnimation *keyframeAnimation = [CAKeyframeAnimation animationWithKeyPath:@"strokeEnd"];
-      keyframeAnimation.values   = @[@0.0, @1.0, @(endValue)];
-      keyframeAnimation.keyTimes   = @[@0.0, @0.8, @1.0];
+      keyframeAnimation.values   = @[@(fromValue), @(maxValue), @(toValue)];
+      keyframeAnimation.keyTimes = @[@0.0, @0.8, @1.0];
       keyframeAnimation.timingFunctions = @[
         [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut],
         [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut],
@@ -241,44 +256,16 @@ const double kChangeAnimationDuration = 0.25;
     else
     {
       CABasicAnimation *basicAnimation = [CABasicAnimation animationWithKeyPath:@"strokeEnd"];
-      basicAnimation.fromValue = @0.0;
-      basicAnimation.toValue   = @1.0;
+      basicAnimation.fromValue = @(fromValue);
+      basicAnimation.toValue   = @(toValue);
       
       animation = basicAnimation;
     }
 
     animation.duration = kInOutAnimationDuration;
-    [layer addAnimation:animation forKey:@"strokeEnd"];
-    
-    layer.opacity = 1.0;
+    [layer addAnimation:animation forKey:@"animateIn"];
   }
   [CATransaction commit];
-}
-
-- (void)animateOut
-{
-  [CATransaction begin];
-  [CATransaction setCompletionBlock:^{
-    [self.graphLayers makeObjectsPerformSelector:@selector(removeFromSuperlayer)];
-    [self.graphLayers removeAllObjects];
-  }];
-  
-  for (CAShapeLayer *layer in self.graphLayers)
-  {
-    CGFloat endValue = 0.0;
-
-    CABasicAnimation *animation = [CABasicAnimation animationWithKeyPath:@"strokeEnd"];
-    animation.fromValue = @(layer.strokeEnd);
-    animation.toValue   = @(endValue);
-    animation.duration  = kInOutAnimationDuration;
-    animation.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
-    
-    [layer addAnimation:animation forKey:@"strokeEnd"];
-    layer.strokeEnd = endValue;
-  }
-  [CATransaction commit];
-  
-  self.isShowing = NO;
 }
 
 @end
