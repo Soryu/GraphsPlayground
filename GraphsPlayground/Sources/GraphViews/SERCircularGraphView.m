@@ -275,7 +275,6 @@ const double kChangeAnimationDuration = 0.25;
     {
       if (CGRectIntersectsRect(textFrameCandidate, [frameValue CGRectValue]))
       {
-        DLog(@"intersects! %d", iterations);
         resolved = NO;
         additionalRadius += textSize.height / 2; // Test this for a good value
         break;
