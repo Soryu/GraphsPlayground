@@ -173,14 +173,12 @@ const double kChangeAnimationDuration = 0.25;
     CAShapeLayer *legendLineLayer = [self legendLineLayerForIndex:index];
     CATextLayer *legendTextLayer  = [self legendTextLayerForIndex:index];
 
-    CGFloat textHeight = 10; // TODO text height, calculate from font
-    CGFloat textWidth  = 15; // TODO length of legend lines, would be nice to have it as long as the text actually is when rendered
-    
+    CGSize textSize = [self textSize];
     NSArray *frames = [[self.legendTextLayers subarrayWithRange:NSMakeRange(0, index)] valueForKey:@"frame"];
     
     CGPoint textAnchorPoint;
     BOOL isReverse = NO;
-    CGPathRef path = [self createLegendLinePathForIndex:index textHeight:textHeight textWidth:textWidth frames:frames textAnchorPoint:&textAnchorPoint isReverse:&isReverse];
+    CGPathRef path = [self createLegendLinePathForIndex:index textSize:textSize frames:frames textAnchorPoint:&textAnchorPoint isReverse:&isReverse];
     
     // this works smoothly to fade out, set new values and fade in
     [CATransaction begin];
@@ -190,7 +188,7 @@ const double kChangeAnimationDuration = 0.25;
 
     legendTextLayer.hidden = YES;
     legendTextLayer.string = [self.values[index] stringValue];
-    legendTextLayer.frame = [self legendTextFrame:textAnchorPoint textHeight:textHeight textWidth:textWidth isReverse:isReverse];
+    legendTextLayer.frame = [self legendTextFrame:textAnchorPoint textSize:textSize isReverse:isReverse];
     legendTextLayer.hidden = NO;
     [CATransaction commit];
 
@@ -219,12 +217,12 @@ const double kChangeAnimationDuration = 0.25;
   }
 }
 
-- (CGRect)legendTextFrame:(CGPoint)textAnchorPoint textHeight:(CGFloat)textHeight textWidth:(CGFloat)textWidth isReverse:(BOOL)isReverse
+- (CGRect)legendTextFrame:(CGPoint)textAnchorPoint textSize:(CGSize)textSize isReverse:(BOOL)isReverse
 {
-  return CGRectMake(textAnchorPoint.x, textAnchorPoint.y - textHeight, (isReverse ? -1.0 : 1.0) * textWidth, textHeight);
+  return CGRectMake(textAnchorPoint.x, textAnchorPoint.y - textSize.height, (isReverse ? -1.0 : 1.0) * textSize.width, textSize.height);
 }
 
-- (CGPathRef)createLegendLinePathForIndex:(NSUInteger)index textHeight:(CGFloat)textHeight textWidth:(CGFloat)textWidth frames:(NSArray *)frames textAnchorPoint:(CGPoint *)textAnchorPoint isReverse:(BOOL *)isReverse
+- (CGPathRef)createLegendLinePathForIndex:(NSUInteger)index textSize:(CGSize)textSize frames:(NSArray *)frames textAnchorPoint:(CGPoint *)textAnchorPoint isReverse:(BOOL *)isReverse
 {
   CGPoint center    = [self graphCenter];
   CGFloat maxRadius = [self maximumRadius];
@@ -255,7 +253,7 @@ const double kChangeAnimationDuration = 0.25;
 
   CGFloat additionalRadius = 0;
   if (absoluteAngle >= 5 * M_PI_4 && absoluteAngle < 7 * M_PI_4)
-    additionalRadius += textHeight;
+    additionalRadius += textSize.height;
 
   CGPoint p0 = [self pointByRotatingVector:CGSizeMake(radius - self.strokeWidth, 0) aroundPoint:center angle:angle];
   CGPoint p1; // to be determined
@@ -270,7 +268,7 @@ const double kChangeAnimationDuration = 0.25;
     
     p1 = [self pointByRotatingVector:CGSizeMake(outerRadius + additionalRadius, 0) aroundPoint:center angle:angle];
 
-    CGRect textFrameCandidate = [self legendTextFrame:p1 textHeight:textHeight textWidth:textWidth isReverse:*isReverse];
+    CGRect textFrameCandidate = [self legendTextFrame:p1 textSize:textSize isReverse:*isReverse];
     
     resolved = YES;
     for (NSValue *frameValue in frames)
@@ -279,7 +277,7 @@ const double kChangeAnimationDuration = 0.25;
       {
         DLog(@"intersects! %d", iterations);
         resolved = NO;
-        additionalRadius += textHeight / 2; // Test this for a good value
+        additionalRadius += textSize.height / 2; // Test this for a good value
         break;
       }
     }
@@ -292,6 +290,7 @@ const double kChangeAnimationDuration = 0.25;
   CGPathAddLineToPoint(path, NULL, p1.x, p1.y);
   
   // direction: to the left or right, depending on the side of the graph. (Sector 1 and 4 -> to the left)
+  CGFloat textWidth = textSize.width;
   if (*isReverse)
   {
     textWidth *= -1;
@@ -365,9 +364,16 @@ const double kChangeAnimationDuration = 0.25;
   return CGPointMake(center.x + x, center.y + y);
 }
 
+// TODO calculate text height from font
+// TODO calculate length of legend lines, would be nice to have it as long as the text actually is when rendered
+- (CGSize)textSize
+{
+  return CGSizeMake(15, 10);
+}
+
 - (CGFloat)maximumRadius
 {
-  CGFloat heightOfLegend = 10; // FIXME height of legend = text height atm
+  CGFloat heightOfLegend = [self textSize].height;
   return fmin(self.frame.size.width, self.frame.size.height) / 2 - self.padding - heightOfLegend;
 }
 
