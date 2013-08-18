@@ -86,12 +86,11 @@ const double kChangeAnimationDuration = 0.25;
   for(NSUInteger i = 0; i < [self.values count]; ++i)
   {
     CGFloat radius = maximumRadius - self.strokeWidth / 2 - i * (self.strokeWidth + self.lineDistance);
-    BOOL sizeOK = radius >= self.strokeWidth / 2;
-    NSAssert(sizeOK, @"graph too small for number of data points and strokeWidth/lineDistance/... configuration");
     
-    if (!sizeOK)
+    if (radius < self.strokeWidth / 2)
     {
       // fail gracefully
+      DLog(@"graph too small for number of data points and strokeWidth/lineDistance/... configuration");
       break;
     }
     
