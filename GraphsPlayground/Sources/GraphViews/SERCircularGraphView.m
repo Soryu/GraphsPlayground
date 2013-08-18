@@ -218,7 +218,7 @@ const double kChangeAnimationDuration = 0.25;
 
 - (CGPathRef)createLegendLinePathForIndex:(NSUInteger)index textHeight:(CGFloat)textHeight textWidth:(CGFloat)textWidth textAnchorPoint:(CGPoint *)textAnchorPoint isReverse:(BOOL *)isReverse
 {
-  CGPoint center   = [self graphCenter];
+  CGPoint center    = [self graphCenter];
   CGFloat maxRadius = [self maximumRadius];
 
   double value = [self.dataPoints[index] doubleValue];
@@ -228,16 +228,28 @@ const double kChangeAnimationDuration = 0.25;
   CGFloat absoluteAngle = 2 * M_PI * value;
   CGFloat additionalRadius = 0;
   
-  // FIXME overlapping legend labels when data points too close
+  // calculate shortest line for legend. this might be a bit too simple, it might still overlap with the graph in certain situations
+  NSUInteger indexOfLargestOuterValue = index;
+  for (NSUInteger i = 0; i < index; ++i)
+  {
+    double outerValue = [self.dataPoints[i] doubleValue];
+    if (outerValue > value)
+    {
+      indexOfLargestOuterValue = i;
+      break;
+    }
+  }
   
-  // TODO shortest length of legend lines, instead of always maximum length. if there is no part of the graph in the way (all dataPoints with smaller index have smaller values) then make the legend line short. BEWARE: it might still overlap when drawn to the left in 1st quadrant or to the right in 3rd quadrant.
+  CGFloat outerRadius = [self radiusForIndex:indexOfLargestOuterValue max:maxRadius] + self.strokeWidth / 2; // was maxRadius
+  
+  // FIXME overlapping legend labels when data points too close
   
   // in case the legend is in the bottom quarter of the graph we need more space, otherwise we risk drawing the text into the graph
   if (absoluteAngle >= 5 * M_PI_4 && absoluteAngle < 7 * M_PI_4)
     additionalRadius += textHeight;
   
   CGPoint p0 = [self pointByRotatingVector:CGSizeMake(radius - self.strokeWidth, 0) aroundPoint:center angle:angle];
-  CGPoint p1 = [self pointByRotatingVector:CGSizeMake(maxRadius + additionalRadius, 0) aroundPoint:center angle:angle];
+  CGPoint p1 = [self pointByRotatingVector:CGSizeMake(outerRadius + additionalRadius, 0) aroundPoint:center angle:angle];
   
   CGMutablePathRef path = CGPathCreateMutable();
   CGPathMoveToPoint(path, NULL, p0.x, p0.y);
