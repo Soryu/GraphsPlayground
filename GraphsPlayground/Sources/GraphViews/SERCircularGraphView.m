@@ -49,7 +49,7 @@ const double kChangeAnimationDuration = 0.25;
     self.lineDistance     = 3.0;
     self.startAngleOffset = -M_PI;
     self.padding          = 0.0;
-    self.defaultColor     = [UIColor blackColor];
+    self.defaultColor     = [UIColor grayColor];
     self.overshoot        = YES;
 
     self.graphLayer  = [CALayer new];
