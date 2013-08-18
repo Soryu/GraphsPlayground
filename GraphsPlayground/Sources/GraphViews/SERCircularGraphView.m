@@ -17,7 +17,7 @@ const double kChangeAnimationDuration = 0.25;
 
 /** container for legend layers **/
 @property (nonatomic, strong) CALayer *legendLayer;
-@property (nonatomic, strong) CAShapeLayer *zeroLayer;
+@property (nonatomic, strong) CAShapeLayer *baseLineLayer;
 @property (nonatomic, strong) NSMutableArray *legendLineLayers;
 @property (nonatomic, strong) NSMutableArray *legendTextLayers;
 
@@ -39,10 +39,8 @@ const double kChangeAnimationDuration = 0.25;
 
 @end
 
-
-// FIXME change double to CGFloat throughout
 // TODO make it work for negative values as well, normalize between -1.0 .. 1.0
-// TODO Legend, also animatable
+// TODO WIP Legend, also animatable
 
 @implementation SERCircularGraphView
 
@@ -69,6 +67,7 @@ const double kChangeAnimationDuration = 0.25;
     self.legendLineLayers = [NSMutableArray new];
     self.legendTextLayers = [NSMutableArray new];
     
+    // TODO setting this to a solid color might improve performance, test this later
     self.backgroundColor = [UIColor clearColor];
     
     self.legendColor = [UIColor lightGrayColor];
@@ -87,12 +86,12 @@ const double kChangeAnimationDuration = 0.25;
   [self buildLegend];
 }
 
+// TODO extract data points calculation from buildGraph, try to make these things work side-effect free, pass stuff as arguments
 - (void)buildGraph
 {
   CGFloat screenScale = [UIScreen mainScreen].scale;
-  double maximumRadius = [self maximumRadius] - self.strokeWidth / 2.0;
+  CGFloat maximumRadius = [self maximumRadius] - self.strokeWidth / 2.0;
 
-  NSArray *oldDataPoints = [self.dataPoints copy];
   NSMutableArray *dataPoints = [NSMutableArray new];
 
   for(NSUInteger i = 0; i < [self.values count]; ++i)
@@ -114,175 +113,95 @@ const double kChangeAnimationDuration = 0.25;
 
     CAShapeLayer *layer = [self layerForIndex:i withRadius:radius];
     layer.strokeEnd = dataPoint;
-    
-    if ([oldDataPoints count] > i)
-    {
-      [self animateLayer:layer fromValue:oldDataPoints[i] toValue:@(dataPoint)];
-    }
   }
   
   self.dataPoints = dataPoints;
   
-  if ([self.graphDataLayers count] > [self.values count])
+  if ([self.graphDataLayers count] > [self.dataPoints count])
   {
     // fade out unused layers
-    for (NSUInteger i = [self.values count]; i < [self.graphDataLayers count]; ++i)
+    for (NSUInteger i = [self.dataPoints count]; i < [self.graphDataLayers count]; ++i)
     {
       CAShapeLayer *layer = self.graphDataLayers[i];
-      CGFloat fromValue = layer.strokeEnd;
-      CGFloat toValue   = 0.0;
-
-      layer.strokeEnd = toValue;
-
-      CABasicAnimation *animation = [CABasicAnimation animationWithKeyPath:@"strokeEnd"];
-      animation.fromValue = @(fromValue);
-      animation.toValue   = @(toValue);
-      animation.duration  = kChangeAnimationDuration;
-      
-      [layer addAnimation:animation forKey:@"unused"];
+      layer.strokeEnd = 0.0;
     }
   }
 }
 
-- (double)radiusForIndex:(NSUInteger)index max:(double)max
+- (CGFloat)radiusForIndex:(NSUInteger)index max:(CGFloat)max
 {
   return max - self.strokeWidth / 2 - index * (self.strokeWidth + self.lineDistance);
 }
 
 - (void)buildLegend
 {
-  [self buildLegendZero];
-  [self buildLegend2];
+  [self buildLegendBaseLine];
+  [self buildLegendLinesAndLabels];
 }
 
-- (void)buildLegendZero
+- (void)buildLegendBaseLine
 {
-  if (!self.zeroLayer)
+  if (!self.baseLineLayer)
   {
     CGFloat radius = [self maximumRadius];
     CGPoint center = [self graphCenter];
     CGPoint maxPoint = [self pointByRotatingVector:CGSizeMake(radius, 0) aroundPoint:center angle:self.startAngleOffset];
     
-    self.zeroLayer = [CAShapeLayer new];
-    self.zeroLayer.fillColor   = nil;
-    self.zeroLayer.strokeColor = self.legendColor.CGColor;
-    self.zeroLayer.lineWidth   = self.legendLineWidth;
+    self.baseLineLayer = [CAShapeLayer new];
+    self.baseLineLayer.fillColor   = nil;
+    self.baseLineLayer.strokeColor = self.legendColor.CGColor;
+    self.baseLineLayer.lineWidth   = self.legendLineWidth;
     
     CGMutablePathRef zeroPath = CGPathCreateMutable();
     CGPathMoveToPoint(zeroPath, NULL, center.x, center.y);
     CGPathAddLineToPoint(zeroPath, NULL, maxPoint.x, maxPoint.y);
     
-    self.zeroLayer.path = zeroPath;
+    self.baseLineLayer.path = zeroPath;
     CGPathRelease(zeroPath);
 
-    [self.legendLayer addSublayer:self.zeroLayer];
+    [self.legendLayer addSublayer:self.baseLineLayer];
   }
   
-  // always animate
-  CGFloat fromValue = self.zeroLayer.opacity;
-  CGFloat toValue   = [self.values count] > 0 ? 1.0 : 0.0;
-  
-  self.zeroLayer.opacity = toValue;
-  
-  CABasicAnimation *animation = [CABasicAnimation animationWithKeyPath:@"opacity"];
-  animation.fromValue = @(fromValue);
-  animation.toValue   = @(toValue);
-  animation.duration  = kChangeAnimationDuration;
-  
-  [self.zeroLayer addAnimation:animation forKey:@"opacity"];
+  self.baseLineLayer.hidden = [self.dataPoints count] == 0;
 }
 
-- (void)buildLegend2
+- (void)buildLegendLinesAndLabels
 {
-  if ([self.dataPoints count] == 0)
-    return;
-
-  CGPoint center = [self graphCenter];
-  double maxRadius = [self maximumRadius];
-  
   for (NSUInteger index = 0; index < [self.dataPoints count]; ++index)
   {
-    CAShapeLayer *legendLineLayer = nil;
-    if ([self.legendLineLayers count] > index)
-    {
-      legendLineLayer = self.legendLineLayers[index];
-    }
-    else
-    {
-      legendLineLayer = [CAShapeLayer new];
-      legendLineLayer.fillColor   = nil;
-      legendLineLayer.strokeColor = self.legendColor.CGColor;
-      legendLineLayer.lineWidth   = self.legendLineWidth;
+    CAShapeLayer *legendLineLayer = [self legendLineLayerForIndex:index];
+    CATextLayer *legendTextLayer  = [self legendTextLayerForIndex:index];
 
-      [self.legendLineLayers addObject:legendLineLayer];
-      [self.legendLayer addSublayer:legendLineLayer];
-    }
+    CGFloat textHeight = 10; // TODO text height, calculate from font
+    CGFloat textWidth  = 15; // TODO length of legend lines, would be nice to have it as long as the text actually is when rendered
+
+    CGPoint textAnchorPoint;
+    BOOL isReverse = NO;
+    CGPathRef path = [self createLegendLinePathForIndex:index textHeight:textHeight textWidth:textWidth textAnchorPoint:&textAnchorPoint isReverse:&isReverse];
+    
+    // this works smoothly to fade out, set new values and fade in
+    [CATransaction begin];
+    legendLineLayer.hidden = YES;
+    legendLineLayer.path = path;
     legendLineLayer.hidden = NO;
 
-    CATextLayer *legendTextLayer = nil;
-    if ([self.legendTextLayers count] > index)
-    {
-      legendTextLayer = self.legendTextLayers[index];
-    }
-    else
-    {
-      legendTextLayer = [CATextLayer new];
-      legendTextLayer.foregroundColor = self.legendColor.CGColor;
-      CGFontRef font = CGFontCreateWithFontName((CFStringRef)@"HelveticaNeue"); // TODO font
-      legendTextLayer.font = font;
-      legendTextLayer.fontSize = 9.0;
-      CGFontRelease(font);
-      legendTextLayer.contentsScale = [UIScreen mainScreen].scale;
-      
-      [self.legendTextLayers addObject:legendTextLayer];
-      [self.legendLayer addSublayer:legendTextLayer];
-    }
-    legendTextLayer.hidden = NO;
+    legendTextLayer.hidden = YES;
     legendTextLayer.string = [self.values[index] stringValue];
-    
-    double a = [self.dataPoints[index] doubleValue];
-    CGFloat radius = [self radiusForIndex:index max:maxRadius];
-    double angle = 2 * M_PI * a + self.startAngleOffset;
-    
-    CGFloat textHeight = 12; // TODO text height
-    CGFloat absoluteAngle = 2 * M_PI * a;
-    CGFloat additionalRadius = 0;
-    
-    // FIXME text layers have implicit frame animations
-    
-    // FIXME overlapping legend labels when data points too close
-    
-    // TODO shortest length of legend lines, instead of always maximum length. if there is no part of the graph in the way (all dataPoints with smaller index have smaller values) then make the legend line short. BEWARE: it might still overlap when drawn to the left in 1st quadrant or to the right in 3rd quadrant.
+    legendTextLayer.frame = CGRectMake(textAnchorPoint.x, textAnchorPoint.y - textHeight, (isReverse ? -1.0 : 1.0) * textWidth, textHeight);
+    legendTextLayer.hidden = NO;
+    [CATransaction commit];
 
-    // in case the legend is in the bottom quarter of the graph we need more space, otherwise we risk drawing the text into the graph
-    if (absoluteAngle >= 5 * M_PI_4 && absoluteAngle < 7 * M_PI_4)
-      additionalRadius += textHeight;
-    
-    CGPoint p0 = [self pointByRotatingVector:CGSizeMake(radius - self.strokeWidth, 0) aroundPoint:center angle:angle];
-    CGPoint p1 = [self pointByRotatingVector:CGSizeMake(maxRadius + additionalRadius, 0) aroundPoint:center angle:angle];
-    
-    CGMutablePathRef path = CGPathCreateMutable();
-    CGPathMoveToPoint(path, NULL, p0.x, p0.y);
-    CGPathAddLineToPoint(path, NULL, p1.x, p1.y);
-    
-    CGFloat offset = 15; // TODO length of legend lines
-    if (absoluteAngle <= M_PI_2 || absoluteAngle > 3 * M_PI_2)
-      offset *= -1;
-    
-    CGPathAddLineToPoint(path, NULL, p1.x + offset, p1.y);
-
-    legendTextLayer.frame = CGRectMake(p1.x, p1.y - textHeight, offset, textHeight);
-
-    legendLineLayer.path = path;
     CGPathRelease(path);
   }
   
+  // hide and reset unused layers
   if ([self.legendLineLayers count] > [self.dataPoints count])
   {
     for (NSUInteger i = [self.dataPoints count]; i < [self.graphDataLayers count]; ++i)
     {
-      CALayer *layer = self.legendLineLayers[i];
+      CAShapeLayer *layer = self.legendLineLayers[i];
       layer.hidden = YES;
+      layer.path = NULL;
     }
   }
 
@@ -290,13 +209,108 @@ const double kChangeAnimationDuration = 0.25;
   {
     for (NSUInteger i = [self.dataPoints count]; i < [self.graphDataLayers count]; ++i)
     {
-      CALayer *layer = self.legendTextLayers[i];
+      CATextLayer *layer = self.legendTextLayers[i];
       layer.hidden = YES;
+      layer.string = @"";
     }
   }
 }
 
-- (CGPoint)pointByRotatingVector:(CGSize)vector aroundPoint:(CGPoint)center angle:(double)theta
+- (CGPathRef)createLegendLinePathForIndex:(NSUInteger)index textHeight:(CGFloat)textHeight textWidth:(CGFloat)textWidth textAnchorPoint:(CGPoint *)textAnchorPoint isReverse:(BOOL *)isReverse
+{
+  CGPoint center   = [self graphCenter];
+  CGFloat maxRadius = [self maximumRadius];
+
+  double value = [self.dataPoints[index] doubleValue];
+  CGFloat radius = [self radiusForIndex:index max:maxRadius];
+  CGFloat angle = 2 * M_PI * value + self.startAngleOffset;
+  
+  CGFloat absoluteAngle = 2 * M_PI * value;
+  CGFloat additionalRadius = 0;
+  
+  // FIXME overlapping legend labels when data points too close
+  
+  // TODO shortest length of legend lines, instead of always maximum length. if there is no part of the graph in the way (all dataPoints with smaller index have smaller values) then make the legend line short. BEWARE: it might still overlap when drawn to the left in 1st quadrant or to the right in 3rd quadrant.
+  
+  // in case the legend is in the bottom quarter of the graph we need more space, otherwise we risk drawing the text into the graph
+  if (absoluteAngle >= 5 * M_PI_4 && absoluteAngle < 7 * M_PI_4)
+    additionalRadius += textHeight;
+  
+  CGPoint p0 = [self pointByRotatingVector:CGSizeMake(radius - self.strokeWidth, 0) aroundPoint:center angle:angle];
+  CGPoint p1 = [self pointByRotatingVector:CGSizeMake(maxRadius + additionalRadius, 0) aroundPoint:center angle:angle];
+  
+  CGMutablePathRef path = CGPathCreateMutable();
+  CGPathMoveToPoint(path, NULL, p0.x, p0.y);
+  CGPathAddLineToPoint(path, NULL, p1.x, p1.y);
+  
+  // direction: to the left or right, depending on the side of the graph. (Sector 1 and 4 -> to the left)
+  if (absoluteAngle <= M_PI_2 || absoluteAngle > 3 * M_PI_2)
+  {
+    textWidth *= -1;
+    *isReverse = YES;
+  }
+  
+  CGPathAddLineToPoint(path, NULL, p1.x + textWidth, p1.y);
+  
+  *textAnchorPoint = p1;
+  return path;
+}
+
+- (CAShapeLayer *)legendLineLayerForIndex:(NSUInteger)index
+{
+  CAShapeLayer *layer = nil;
+
+  if ([self.legendLineLayers count] > index)
+  {
+    layer = self.legendLineLayers[index];
+  }
+  else
+  {
+    layer = [CAShapeLayer new];
+    layer.fillColor   = nil;
+    layer.strokeColor = self.legendColor.CGColor;
+    layer.lineWidth   = self.legendLineWidth;
+    
+    [self.legendLineLayers addObject:layer];
+    [self.legendLayer addSublayer:layer];
+  }
+  
+  return layer;
+}
+
+- (CATextLayer *)legendTextLayerForIndex:(NSUInteger)index
+{
+  CATextLayer *layer = nil;
+  
+  if ([self.legendTextLayers count] > index)
+  {
+    layer = self.legendTextLayers[index];
+  }
+  else
+  {
+    CGFontRef font = CGFontCreateWithFontName((CFStringRef)@"HelveticaNeue"); // TODO font configurable
+
+    layer = [CATextLayer new];
+    layer.font            = font;
+    layer.fontSize        = 9.0;
+    layer.contentsScale   = [UIScreen mainScreen].scale;
+    layer.foregroundColor = self.legendColor.CGColor;
+
+    CGFontRelease(font);
+    
+    // remove implicit animations for frame and string: http://stackoverflow.com/questions/2244147/disabling-implicit-animations-in-calayer-setneedsdisplayinrect
+    layer.actions = @{
+      @"position": [NSNull null],
+      @"contents": [NSNull null],
+    };
+    
+    [self.legendTextLayers addObject:layer];
+    [self.legendLayer addSublayer:layer];
+  }
+  return layer;
+}
+
+- (CGPoint)pointByRotatingVector:(CGSize)vector aroundPoint:(CGPoint)center angle:(CGFloat)theta
 {
   CGFloat x = vector.width * cos(theta) - vector.height * sin(theta);
   CGFloat y = vector.width * sin(theta) + vector.height * cos(theta);
@@ -304,9 +318,10 @@ const double kChangeAnimationDuration = 0.25;
   return CGPointMake(center.x + x, center.y + y);
 }
 
-- (double)maximumRadius
+- (CGFloat)maximumRadius
 {
-  return fmin(self.frame.size.width, self.frame.size.height) / 2 - self.padding;
+  CGFloat heightOfLegend = 10; // FIXME height of legend = text height atm
+  return fmin(self.frame.size.width, self.frame.size.height) / 2 - self.padding - heightOfLegend;
 }
 
 // normalizes between 0.0 and 1.0
@@ -342,17 +357,6 @@ const double kChangeAnimationDuration = 0.25;
     if (value > *maximumValue)
       *maximumValue = value;
   }
-}
-
-- (void)animateLayer:(CAShapeLayer *)layer fromValue:(NSNumber *)fromValue toValue:(NSNumber *)toValue
-{
-  CABasicAnimation *animation = [CABasicAnimation animationWithKeyPath:@"strokeEnd"];
-  animation.fromValue      = fromValue;
-  animation.toValue        = toValue;
-  animation.duration       = kChangeAnimationDuration;
-  animation.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
-
-  [layer addAnimation:animation forKey:@"changeAnimation"];
 }
 
 // TODO radius can change when view size changes, layers/paths need to be invalidated when that happens. This could be while rotating the device, so this should be fast.
@@ -404,24 +408,44 @@ const double kChangeAnimationDuration = 0.25;
 
 - (void)animateIn
 {
+  // preparations: hide legend except base line
+
   [CATransaction begin];
+  [CATransaction setDisableActions: YES];
   
-  BOOL shouldShowLegend = YES;
-  if (shouldShowLegend)
+  for (CALayer *layer in self.legendLineLayers)
+  {
+    layer.hidden = YES;
+  }
+
+  for (CALayer *layer in self.legendTextLayers)
+  {
+    layer.hidden = YES;
+  }
+
+  [CATransaction commit];
+
+  [CATransaction begin];
+  [CATransaction setCompletionBlock:^{
+    [self animateInLegend];
+  }];
+  
+  // animate base line
   {
     CGFloat fromValue = 0.0;
     CGFloat toValue   = 1.0;
     
-    self.zeroLayer.opacity = toValue;
+    self.baseLineLayer.opacity = toValue;
 
     CABasicAnimation *animation = [CABasicAnimation animationWithKeyPath:@"opacity"];
     animation.fromValue = @(fromValue);
     animation.toValue   = @(toValue);
     animation.duration  = kInOutAnimationDuration; //  / 4.0;
     
-    [self.zeroLayer addAnimation:animation forKey:@"animateIn"];
+    [self.baseLineLayer addAnimation:animation forKey:@"animateIn"];
   }
   
+  // animate data
   for (NSUInteger i = 0; i < [self.dataPoints count]; ++i)
   {
     double dataPoint = [self.dataPoints[i] doubleValue];
@@ -463,6 +487,35 @@ const double kChangeAnimationDuration = 0.25;
     animation.duration = kInOutAnimationDuration;
     [layer addAnimation:animation forKey:@"animateIn"];
   }
+  [CATransaction commit];
+}
+
+- (void)animateInLegend
+{
+  [CATransaction begin];
+  [CATransaction setCompletionBlock:^{
+    for (CATextLayer *layer in self.legendTextLayers)
+      layer.hidden = NO;
+  }];
+  
+  CGFloat delay = 0.05;
+  for (NSUInteger i = 0; i < [self.legendLineLayers count]; ++i)
+  {
+    CAShapeLayer *layer = self.legendLineLayers[i];
+    CGFloat fromValue = 0.0;
+    CGFloat toValue   = 1.0;
+    
+    layer.hidden    = NO;
+    layer.strokeEnd = toValue;
+    
+    CABasicAnimation *animation = [CABasicAnimation animationWithKeyPath:@"strokeEnd"];
+    animation.fromValue = @(fromValue);
+    animation.toValue   = @(toValue);
+    animation.beginTime = i * delay; // TODO does not seem to work to stagger the animations
+    
+    [layer addAnimation:animation forKey:@"animateIn"];
+  }
+  
   [CATransaction commit];
 }
 
