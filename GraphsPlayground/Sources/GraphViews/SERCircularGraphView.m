@@ -215,7 +215,6 @@ const double kChangeAnimationDuration = 0.25;
       CATextLayer *layer = self.legendTextLayers[i];
       layer.hidden = YES;
       layer.string = @"";
-      layer.frame  = CGRectZero;
     }
   }
 }
@@ -339,7 +338,6 @@ const double kChangeAnimationDuration = 0.25;
     CGFontRef font = CGFontCreateWithFontName((CFStringRef)@"HelveticaNeue"); // TODO font configurable
 
     layer = [CATextLayer new];
-    layer.frame           = CGRectZero;
     layer.font            = font;
     layer.fontSize        = 9.0;
     layer.contentsScale   = [UIScreen mainScreen].scale;
