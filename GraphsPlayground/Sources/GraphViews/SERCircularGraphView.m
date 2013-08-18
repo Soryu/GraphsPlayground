@@ -83,21 +83,23 @@ const double kChangeAnimationDuration = 0.25;
   [super layoutSubviews];
   
   // TODO is this OK to call in layoutSubviews? Where else could we call it directly before displaying? seems to work fine for now
+
+  // this depends on size of view, could be abstracted further out but that would not help
+  self.dataPoints = [self dataPointsFromValues:self.values min:self.minimumValue max:self.maximumValue];
+
   [self buildGraph];
   [self buildLegend];
 }
 
-// TODO extract data points calculation from buildGraph, try to make these things work side-effect free, pass stuff as arguments
-- (void)buildGraph
+- (NSArray *)dataPointsFromValues:(NSArray *)values min:(NSNumber *)min max:(NSNumber *)max
 {
-  CGFloat screenScale = [UIScreen mainScreen].scale;
-  CGFloat maximumRadius = [self maximumRadius] - self.strokeWidth / 2.0;
-
   NSMutableArray *dataPoints = [NSMutableArray new];
-
-  for(NSUInteger i = 0; i < [self.values count]; ++i)
+  
+  CGFloat maximumRadius = [self maximumRadius] - self.strokeWidth / 2.0;
+  for(NSUInteger index = 0; index < [values count]; ++index)
   {
-    CGFloat radius = [self radiusForIndex:i max:maximumRadius];
+    // calculate radius to see if it fits
+    CGFloat radius = [self radiusForIndex:index max:maximumRadius];
     
     if (radius < self.strokeWidth / 2)
     {
@@ -106,17 +108,29 @@ const double kChangeAnimationDuration = 0.25;
       break;
     }
     
-    // round to pixel boundaries
-    radius = round(radius * screenScale) / screenScale;
+    double minValue = [min doubleValue];
+    double maxValue = [max doubleValue];
+    double dataPoint = ([self.values[index] doubleValue] - minValue) / (maxValue - minValue);
 
-    double dataPoint = [self dataPointForValueAtIndex:i];
     [dataPoints addObject:@(dataPoint)];
-
-    CAShapeLayer *layer = [self layerForIndex:i withRadius:radius];
-    layer.strokeEnd = dataPoint;
   }
   
-  self.dataPoints = dataPoints;
+  return dataPoints;
+}
+
+- (void)buildGraph
+{
+  CGFloat screenScale = [UIScreen mainScreen].scale;
+  CGFloat maximumRadius = [self maximumRadius] - self.strokeWidth / 2.0;
+
+  for(NSUInteger i = 0; i < [self.dataPoints count]; ++i)
+  {
+    // round to pixel boundaries
+    CGFloat radius = ([self radiusForIndex:i max:maximumRadius] * screenScale) / screenScale;
+
+    CAShapeLayer *layer = [self layerForIndex:i withRadius:radius];
+    layer.strokeEnd = [self.dataPoints[i] doubleValue];
+  }
   
   if ([self.graphDataLayers count] > [self.dataPoints count])
   {
@@ -374,15 +388,6 @@ const double kChangeAnimationDuration = 0.25;
 {
   CGFloat heightOfLegend = [self textSize].height;
   return fmin(self.frame.size.width, self.frame.size.height) / 2 - self.padding - heightOfLegend;
-}
-
-// normalizes between 0.0 and 1.0
-- (double)dataPointForValueAtIndex:(NSUInteger)index
-{
-  double min = [self.minimumValue doubleValue];
-  double max = [self.maximumValue doubleValue];
-
-  return ([self.values[index] doubleValue] - min) / (max - min);
 }
 
 - (void)checkValuesWithMinimum:(double *)minimumValue maximum:(double *)maximumValue
