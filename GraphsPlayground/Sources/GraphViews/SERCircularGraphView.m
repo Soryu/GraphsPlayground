@@ -41,6 +41,7 @@ const double kChangeAnimationDuration = 0.25;
 
 // TODO make it work for negative values as well, normalize between -1.0 .. 1.0
 // TODO WIP Legend, also animatable
+// TODO the label overlapping resolution code can make the graph draw outside its view bounds
 
 @implementation SERCircularGraphView
 
@@ -174,10 +175,12 @@ const double kChangeAnimationDuration = 0.25;
 
     CGFloat textHeight = 10; // TODO text height, calculate from font
     CGFloat textWidth  = 15; // TODO length of legend lines, would be nice to have it as long as the text actually is when rendered
-
+    
+    NSArray *frames = [[self.legendTextLayers subarrayWithRange:NSMakeRange(0, index)] valueForKey:@"frame"];
+    
     CGPoint textAnchorPoint;
     BOOL isReverse = NO;
-    CGPathRef path = [self createLegendLinePathForIndex:index textHeight:textHeight textWidth:textWidth textAnchorPoint:&textAnchorPoint isReverse:&isReverse];
+    CGPathRef path = [self createLegendLinePathForIndex:index textHeight:textHeight textWidth:textWidth frames:frames textAnchorPoint:&textAnchorPoint isReverse:&isReverse];
     
     // this works smoothly to fade out, set new values and fade in
     [CATransaction begin];
@@ -187,7 +190,7 @@ const double kChangeAnimationDuration = 0.25;
 
     legendTextLayer.hidden = YES;
     legendTextLayer.string = [self.values[index] stringValue];
-    legendTextLayer.frame = CGRectMake(textAnchorPoint.x, textAnchorPoint.y - textHeight, (isReverse ? -1.0 : 1.0) * textWidth, textHeight);
+    legendTextLayer.frame = [self legendTextFrame:textAnchorPoint textHeight:textHeight textWidth:textWidth isReverse:isReverse];
     legendTextLayer.hidden = NO;
     [CATransaction commit];
 
@@ -212,11 +215,17 @@ const double kChangeAnimationDuration = 0.25;
       CATextLayer *layer = self.legendTextLayers[i];
       layer.hidden = YES;
       layer.string = @"";
+      layer.frame  = CGRectZero;
     }
   }
 }
 
-- (CGPathRef)createLegendLinePathForIndex:(NSUInteger)index textHeight:(CGFloat)textHeight textWidth:(CGFloat)textWidth textAnchorPoint:(CGPoint *)textAnchorPoint isReverse:(BOOL *)isReverse
+- (CGRect)legendTextFrame:(CGPoint)textAnchorPoint textHeight:(CGFloat)textHeight textWidth:(CGFloat)textWidth isReverse:(BOOL)isReverse
+{
+  return CGRectMake(textAnchorPoint.x, textAnchorPoint.y - textHeight, (isReverse ? -1.0 : 1.0) * textWidth, textHeight);
+}
+
+- (CGPathRef)createLegendLinePathForIndex:(NSUInteger)index textHeight:(CGFloat)textHeight textWidth:(CGFloat)textWidth frames:(NSArray *)frames textAnchorPoint:(CGPoint *)textAnchorPoint isReverse:(BOOL *)isReverse
 {
   CGPoint center    = [self graphCenter];
   CGFloat maxRadius = [self maximumRadius];
@@ -225,41 +234,68 @@ const double kChangeAnimationDuration = 0.25;
   CGFloat radius = [self radiusForIndex:index max:maxRadius];
   CGFloat angle = 2 * M_PI * value + self.startAngleOffset;
   
-  CGFloat absoluteAngle = 2 * M_PI * value;
-  CGFloat additionalRadius = 0;
-  
   // calculate shortest line for legend. this might be a bit too simple, it might still overlap with the graph in certain situations
   NSUInteger indexOfLargestOuterValue = index;
+  double epsilon = 0.05;
   for (NSUInteger i = 0; i < index; ++i)
   {
     double outerValue = [self.dataPoints[i] doubleValue];
-    if (outerValue > value)
+    if (outerValue + epsilon > value)
     {
       indexOfLargestOuterValue = i;
       break;
     }
   }
   
-  CGFloat outerRadius = [self radiusForIndex:indexOfLargestOuterValue max:maxRadius] + self.strokeWidth / 2; // was maxRadius
-  
-  // FIXME overlapping legend labels when data points too close
-  
-  // in case the legend is in the bottom quarter of the graph we need more space, otherwise we risk drawing the text into the graph
+  CGFloat absoluteAngle = 2 * M_PI * value;
+  // direction: to the left or right, depending on the side of the graph. (Sector 1 and 4 -> to the left)
+  if (absoluteAngle <= M_PI_2 || absoluteAngle > 3 * M_PI_2)
+  {
+    *isReverse = YES;
+  }
+
+  CGFloat additionalRadius = 0;
   if (absoluteAngle >= 5 * M_PI_4 && absoluteAngle < 7 * M_PI_4)
     additionalRadius += textHeight;
-  
+
   CGPoint p0 = [self pointByRotatingVector:CGSizeMake(radius - self.strokeWidth, 0) aroundPoint:center angle:angle];
-  CGPoint p1 = [self pointByRotatingVector:CGSizeMake(outerRadius + additionalRadius, 0) aroundPoint:center angle:angle];
+  CGPoint p1; // to be determined
+  
+  // label frames should not overlap
+  NSUInteger iterations = 6;
+  BOOL resolved = NO;
+  while (!resolved && iterations > 0)
+  {
+    CGFloat outerRadius = [self radiusForIndex:indexOfLargestOuterValue max:maxRadius] + self.strokeWidth / 2; // was maxRadius
+    // in case the legend is in the bottom quarter of the graph we need more space, otherwise we risk drawing the text into the graph
+    
+    p1 = [self pointByRotatingVector:CGSizeMake(outerRadius + additionalRadius, 0) aroundPoint:center angle:angle];
+
+    CGRect textFrameCandidate = [self legendTextFrame:p1 textHeight:textHeight textWidth:textWidth isReverse:*isReverse];
+    
+    resolved = YES;
+    for (NSValue *frameValue in frames)
+    {
+      if (CGRectIntersectsRect(textFrameCandidate, [frameValue CGRectValue]))
+      {
+        DLog(@"intersects! %d", iterations);
+        resolved = NO;
+        additionalRadius += textHeight / 2; // Test this for a good value
+        break;
+      }
+    }
+    
+    --iterations;
+  }
   
   CGMutablePathRef path = CGPathCreateMutable();
   CGPathMoveToPoint(path, NULL, p0.x, p0.y);
   CGPathAddLineToPoint(path, NULL, p1.x, p1.y);
   
   // direction: to the left or right, depending on the side of the graph. (Sector 1 and 4 -> to the left)
-  if (absoluteAngle <= M_PI_2 || absoluteAngle > 3 * M_PI_2)
+  if (*isReverse)
   {
     textWidth *= -1;
-    *isReverse = YES;
   }
   
   CGPathAddLineToPoint(path, NULL, p1.x + textWidth, p1.y);
@@ -303,6 +339,7 @@ const double kChangeAnimationDuration = 0.25;
     CGFontRef font = CGFontCreateWithFontName((CFStringRef)@"HelveticaNeue"); // TODO font configurable
 
     layer = [CATextLayer new];
+    layer.frame           = CGRectZero;
     layer.font            = font;
     layer.fontSize        = 9.0;
     layer.contentsScale   = [UIScreen mainScreen].scale;
