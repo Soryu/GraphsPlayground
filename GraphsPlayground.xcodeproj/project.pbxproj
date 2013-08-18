@@ -408,6 +408,7 @@
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "GraphsPlayground/GraphsPlayground-Prefix.pch";
 				INFOPLIST_FILE = "GraphsPlayground/GraphsPlayground-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 6.1;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				WRAPPER_EXTENSION = app;
 			};
@@ -421,6 +422,7 @@
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "GraphsPlayground/GraphsPlayground-Prefix.pch";
 				INFOPLIST_FILE = "GraphsPlayground/GraphsPlayground-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 6.1;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				WRAPPER_EXTENSION = app;
 			};
@@ -485,6 +487,7 @@
 				E2B9BCEE17BFFBD90036553B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
 		};
 		E2B9BCEF17BFFBD90036553B /* Build configuration list for PBXNativeTarget "GraphsPlaygroundTests" */ = {
 			isa = XCConfigurationList;
@@ -493,6 +496,7 @@
 				E2B9BCF117BFFBD90036553B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};

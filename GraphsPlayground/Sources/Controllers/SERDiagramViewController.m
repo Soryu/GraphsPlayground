@@ -69,7 +69,7 @@
   UIButton *clearButton = [UIButton buttonWithType:UIButtonTypeRoundedRect];
   [clearButton setTitle:@"clear" forState:UIControlStateNormal];
   [clearButton addTarget:self action:@selector(clearButtonPressed:) forControlEvents:UIControlEventTouchUpInside];
-  clearButton.frame = CGRectMake(0, 420, 320, 44);
+  clearButton.frame = CGRectMake(30, 420, 260, 44);
   clearButton.autoresizingMask = UIViewAutoresizingFlexibleTopMargin;
   
   [self.view addSubview:clearButton];
@@ -80,7 +80,9 @@
   [super viewDidLoad];
   
   self.title = @"Animated Graph";
-  self.view.tintColor = [UIColor colorFromHexString:@"#411D00"];
+  
+  if ([self.view respondsToSelector:@selector(setTintColor:)])
+    self.view.tintColor = [UIColor colorFromHexString:@"#411D00"];
 }
 
 - (void)viewDidAppear:(BOOL)animated
