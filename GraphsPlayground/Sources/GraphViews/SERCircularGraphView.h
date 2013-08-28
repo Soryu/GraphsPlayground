@@ -8,6 +8,11 @@
 
 #import <UIKit/UIKit.h>
 
+static NSString * const kSERLegendColor    = @"LegendColor";
+static NSString * const kSERDefaultColor   = @"DefaultColor";
+static NSString * const kSERLegendFontName = @"LegendFontName";
+static NSString * const kSERLegendFontSize = @"LegendFontSize";
+
 @interface SERCircularGraphView : UIView
 
 @property (nonatomic, copy, readonly) NSArray *values;
@@ -20,6 +25,8 @@
 @property (nonatomic) CGFloat startAngleOffset;
 @property (nonatomic) CGFloat padding;
 @property (nonatomic) BOOL overshoot;
+
+@property (nonatomic, copy) NSDictionary *config;
 
 - (void)setData:(NSArray *)data minimumValue:(NSNumber *)minimumValue maximumValue:(NSNumber *)maximumValue;
 - (void)animateIn;

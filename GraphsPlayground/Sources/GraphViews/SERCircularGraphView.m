@@ -33,8 +33,6 @@ const double kChangeAnimationDuration = 0.25;
 @property (nonatomic, copy, readwrite) NSNumber *minimumValue;
 @property (nonatomic, copy, readwrite) NSNumber *maximumValue;
 
-@property (nonatomic, strong) UIColor *defaultColor;
-@property (nonatomic, strong) UIColor *legendColor;
 @property (nonatomic) CGFloat legendLineWidth;
 
 @end
@@ -54,7 +52,6 @@ const double kChangeAnimationDuration = 0.25;
     self.lineDistance     = 3.0;
     self.startAngleOffset = -M_PI;
     self.padding          = 0.0;
-    self.defaultColor     = [UIColor grayColor];
     self.overshoot        = YES;
 
     self.graphLayer  = [CALayer new];
@@ -71,7 +68,13 @@ const double kChangeAnimationDuration = 0.25;
     // TODO setting this to a solid color might improve performance, test this later
     self.backgroundColor = [UIColor clearColor];
     
-    self.legendColor = [UIColor lightGrayColor];
+    self.config = @{
+      kSERDefaultColor:   [UIColor grayColor],
+      kSERLegendColor:    [UIColor lightGrayColor],
+      kSERLegendFontName: @"HelveticaNeue",
+      kSERLegendFontSize: @9.0,
+    };
+
     self.legendLineWidth = 1;
   }
   return self;
@@ -164,7 +167,7 @@ const double kChangeAnimationDuration = 0.25;
     
     self.baseLineLayer = [CAShapeLayer new];
     self.baseLineLayer.fillColor   = nil;
-    self.baseLineLayer.strokeColor = self.legendColor.CGColor;
+    self.baseLineLayer.strokeColor = [self.config[kSERLegendColor] CGColor];
     self.baseLineLayer.lineWidth   = self.legendLineWidth;
     
     CGMutablePathRef zeroPath = CGPathCreateMutable();
@@ -182,12 +185,18 @@ const double kChangeAnimationDuration = 0.25;
 
 - (void)buildLegendLinesAndLabels
 {
+  CGFloat screenScale = [UIScreen mainScreen].scale;
+
   for (NSUInteger index = 0; index < [self.dataPoints count]; ++index)
   {
+    NSString *text = [self.values[index] stringValue];
+    
     CAShapeLayer *legendLineLayer = [self legendLineLayerForIndex:index];
     CATextLayer *legendTextLayer  = [self legendTextLayerForIndex:index];
 
-    CGSize textSize = [self textSize];
+    CGSize textSize = [self textSizeForText:text];
+    textSize.width += 2.0 / screenScale;
+    
     NSArray *frames = [[self.legendTextLayers subarrayWithRange:NSMakeRange(0, index)] valueForKey:@"frame"];
     
     CGPoint textAnchorPoint;
@@ -201,7 +210,7 @@ const double kChangeAnimationDuration = 0.25;
     legendLineLayer.hidden = NO;
 
     legendTextLayer.hidden = YES;
-    legendTextLayer.string = [self.values[index] stringValue];
+    legendTextLayer.string = text;
     legendTextLayer.frame = [self legendTextFrame:textAnchorPoint textSize:textSize isReverse:isReverse];
     legendTextLayer.hidden = NO;
     [CATransaction commit];
@@ -327,7 +336,7 @@ const double kChangeAnimationDuration = 0.25;
   {
     layer = [CAShapeLayer new];
     layer.fillColor   = nil;
-    layer.strokeColor = self.legendColor.CGColor;
+    layer.strokeColor = [self.config[kSERLegendColor] CGColor];
     layer.lineWidth   = self.legendLineWidth;
     
     [self.legendLineLayers addObject:layer];
@@ -347,15 +356,17 @@ const double kChangeAnimationDuration = 0.25;
   }
   else
   {
-    CGFontRef font = CGFontCreateWithFontName((CFStringRef)@"HelveticaNeue"); // TODO font configurable
+    CGFloat screenScale = [UIScreen mainScreen].scale;
+    
+    NSString *fontName = self.config[kSERLegendFontName];
+    CGFloat fontSize   = [self.config[kSERLegendFontSize] floatValue];
+    UIColor *legendColor = self.config[kSERLegendColor];
 
     layer = [CATextLayer new];
-    layer.font            = font;
-    layer.fontSize        = 9.0;
-    layer.contentsScale   = [UIScreen mainScreen].scale;
-    layer.foregroundColor = self.legendColor.CGColor;
-
-    CGFontRelease(font);
+    layer.font            = (__bridge CFTypeRef)fontName;
+    layer.fontSize        = fontSize;
+    layer.contentsScale   = screenScale;
+    layer.foregroundColor = legendColor.CGColor;
     
     // remove implicit animations for frame and string: http://stackoverflow.com/questions/2244147/disabling-implicit-animations-in-calayer-setneedsdisplayinrect
     layer.actions = @{
@@ -377,16 +388,27 @@ const double kChangeAnimationDuration = 0.25;
   return CGPointMake(center.x + x, center.y + y);
 }
 
-// TODO calculate text height from font
-// TODO calculate length of legend lines, would be nice to have it as long as the text actually is when rendered
-- (CGSize)textSize
+- (CGSize)textSizeForText:(NSString *)originalText
 {
-  return CGSizeMake(15, 10);
+  NSString *text = originalText ?: @"Mylf0123456789";
+  
+  NSString *fontName = self.config[kSERLegendFontName];
+  CGFloat fontSize   = [self.config[kSERLegendFontSize] floatValue];
+
+  UIFont *font = [UIFont fontWithName:fontName size:fontSize];
+  CGSize size = [text sizeWithAttributes:@{
+    NSFontAttributeName: font
+  }];
+  
+  if (!originalText)
+    size.width = 0.0;
+  
+  return size;
 }
 
 - (CGFloat)maximumRadius
 {
-  CGFloat heightOfLegend = [self textSize].height;
+  CGFloat heightOfLegend = [self textSizeForText:nil].height;
   return fmin(self.frame.size.width, self.frame.size.height) / 2 - self.padding - heightOfLegend;
 }
 
@@ -429,7 +451,7 @@ const double kChangeAnimationDuration = 0.25;
   layer.path = bezierPath.CGPath;
   
   // TODO configuration changes should be applicable live, override setters and change layer properties
-  UIColor *color = self.defaultColor;
+  UIColor *color = self.config[kSERDefaultColor];
   if ([self.colors count] > index)
     color = self.colors[index];
   
